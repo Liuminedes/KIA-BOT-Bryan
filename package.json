@@ -1,0 +1,32 @@
+{
+  "name": "kia-bot-gerardo",
+  "version": "4.0.0",
+  "description": "KIA Bot Gerardo Pineda — Vyntra Orbit (Baileys)",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@hapi/boom": "^10.0.1",
+    "@whiskeysockets/baileys": "6.7.18",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "ioredis": "^5.4.1",
+    "morgan": "^1.10.0",
+    "multer": "^1.4.5-lts.1",
+    "pino": "^9.5.0",
+    "qrcode": "^1.5.3",
+    "winston": "^3.13.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  },
+  "author": "Vyntra Orbit",
+  "license": "MIT"
+}

@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KIA Bot — Admin Panel</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; }
+    .header { background: #BB162B; padding: 16px 24px; display: flex; align-items: center; gap: 12px; }
+    .header h1 { font-size: 18px; font-weight: 700; color: white; }
+    .header span { font-size: 12px; color: rgba(255,255,255,0.7); }
+    .container { max-width: 980px; margin: 0 auto; padding: 24px 16px; display: grid; gap: 20px; }
+    .card { background: #1a1d27; border: 1px solid #2d3148; border-radius: 12px; padding: 20px; }
+    .card h2 { font-size: 14px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .dot-green { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
+    .dot-red   { background: #ef4444; box-shadow: 0 0 6px #ef4444; }
+    .dot-yellow{ background: #f59e0b; box-shadow: 0 0 6px #f59e0b; }
+    .qr-container { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+    .qr-container img { width: 220px; height: 220px; border-radius: 8px; border: 2px solid #2d3148; background: white; padding: 8px; }
+    .status-badge { padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 600; }
+    .badge-green  { background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.3); }
+    .badge-yellow { background: rgba(245,158,11,0.15); color: #f59e0b; border: 1px solid rgba(245,158,11,0.3); }
+    .qr-hint { font-size: 12px; color: #64748b; text-align: center; max-width: 260px; }
+    .btn { padding: 10px 20px; border-radius: 8px; border: none; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.2s; }
+    .btn-primary { background: #BB162B; color: white; }
+    .btn-primary:hover { background: #9b1323; }
+    .btn-secondary { background: #2d3148; color: #e2e8f0; }
+    .btn-secondary:hover { background: #3d4168; }
+    .btn-danger { background: rgba(239,68,68,0.15); color: #ef4444; border: 1px solid rgba(239,68,68,0.3); }
+    .btn-danger:hover { background: rgba(239,68,68,0.25); }
+    .btn-success { background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.3); }
+    .btn-success:hover { background: rgba(34,197,94,0.25); }
+    .btn-warn { background: rgba(245,158,11,0.12); color: #f59e0b; border: 1px solid rgba(245,158,11,0.3); }
+    .btn-warn:hover { background: rgba(245,158,11,0.2); }
+    .sessions-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .sessions-table th { text-align: left; padding: 8px 12px; color: #64748b; border-bottom: 1px solid #2d3148; font-weight: 500; }
+    .sessions-table td { padding: 10px 12px; border-bottom: 1px solid #1e2235; }
+    .sessions-table tr:last-child td { border-bottom: none; }
+    .tag { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+    .tag-active   { background: rgba(34,197,94,0.15); color: #22c55e; }
+    .tag-paused   { background: rgba(245,158,11,0.15); color: #f59e0b; }
+    .tag-handoff  { background: rgba(139,92,246,0.15); color: #a78bfa; }
+    .tag-admin    { background: rgba(100,116,139,0.2); color: #94a3b8; }
+    .tag-armed    { background: rgba(59,130,246,0.15); color: #60a5fa; border: 1px solid rgba(59,130,246,0.3); }
+    .toast { position: fixed; bottom: 24px; right: 24px; background: #1e2235; border: 1px solid #2d3148; border-radius: 8px; padding: 12px 20px; font-size: 14px; display: none; z-index: 100; }
+    .toast.show { display: block; animation: fadeIn 0.3s; }
+    .global-toggle { display: flex; align-items: center; justify-content: space-between; }
+    .toggle { position: relative; width: 48px; height: 26px; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background: #2d3148; border-radius: 26px; transition: 0.3s; }
+    .slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: 0.3s; }
+    input:checked + .slider { background: #BB162B; }
+    input:checked + .slider:before { transform: translateX(22px); }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>🚗 KIA Bot — Panel Admin</h1>
+    <span id="advisorLabel">Vyntra Orbit</span>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- WhatsApp Status + QR -->
+  <div class="card">
+    <h2>📱 Estado WhatsApp</h2>
+    <div class="qr-container" id="qrSection">
+      <div id="statusBadge" class="status-badge badge-yellow">⏳ Verificando...</div>
+      <div id="qrImage" style="display:none">
+        <img id="qrImg" src="" alt="QR Code"/>
+        <p class="qr-hint">Abre WhatsApp → Ajustes → Dispositivos vinculados → Vincular dispositivo</p>
+      </div>
+      <div id="connectedMsg" style="display:none; text-align:center; color:#22c55e;">
+        <div style="font-size:48px">✅</div>
+        <p style="margin-top:8px; font-weight:600;">WhatsApp conectado</p>
+        <p style="font-size:12px; color:#64748b; margin-top:4px;">El bot está activo y respondiendo</p>
+      </div>
+      <div style="display:flex; gap:8px; margin-top:8px">
+        <button class="btn btn-secondary" onclick="refreshStatus()">🔄 Actualizar estado</button>
+        <button class="btn btn-warn" onclick="forceRelogin()" title="Cierra sesión y genera nuevo QR">🔓 Forzar relogin</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pausa global -->
+  <div class="card">
+    <h2>⏸️ Control del Bot</h2>
+    <div class="global-toggle">
+      <div>
+        <p style="font-weight:600; margin-bottom:4px">Bot activo globalmente</p>
+        <p style="font-size:13px; color:#64748b">Pausa el bot para todos los clientes a la vez</p>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="globalToggle" checked onchange="toggleGlobal(this)">
+        <span class="slider"></span>
+      </label>
+    </div>
+  </div>
+
+  <!-- Sesiones activas -->
+  <div class="card">
+    <h2>👥 Sesiones de Clientes</h2>
+    <div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap">
+      <button class="btn btn-secondary" onclick="loadSessions()">🔄 Actualizar lista</button>
+      <div style="display:flex; gap:12px; align-items:center; font-size:12px; color:#64748b; flex-wrap:wrap">
+        <span><span class="tag tag-armed">🎯 Armado</span> asesor escribió primero</span>
+        <span><span class="tag tag-active">▶ Bot activo</span></span>
+        <span><span class="tag tag-paused">⏸ Asesor atiende</span></span>
+        <span><span class="tag tag-handoff">🏁 Lead entregado</span></span>
+      </div>
+    </div>
+    <div id="sessionsContainer">
+      <p style="color:#64748b; font-size:13px">Haz clic en "Actualizar lista" para ver las sesiones</p>
+    </div>
+  </div>
+
+  <!-- Números excluidos -->
+  <div class="card">
+    <h2>🚫 Números Excluidos</h2>
+    <p style="font-size:13px; color:#64748b; margin-bottom:12px">El bot no responderá a estos números</p>
+    <div style="display:flex; gap:8px; margin-bottom:16px">
+      <input type="text" id="excludeInput" placeholder="Ej: 3001234567" style="flex:1; padding:10px; border-radius:6px; border:1px solid #2d3148; background:#0f1117; color:#e2e8f0; font-size:14px"/>
+      <button class="btn btn-primary" onclick="addExcluded()">Agregar</button>
+    </div>
+    <div id="excludedList">
+      <p style="color:#64748b; font-size:13px">Cargando...</p>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const TOKEN = new URLSearchParams(window.location.search).get('token') || '';
+
+  async function api(path, options = {}) {
+    const res = await fetch(path, {
+      ...options,
+      headers: { 'Authorization': `Bearer ${TOKEN}`, 'Content-Type': 'application/json', ...(options.headers || {}) },
+    });
+    return res.json();
+  }
+
+  function showToast(msg, type = 'info') {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.style.borderColor = type === 'success' ? '#22c55e' : type === 'error' ? '#ef4444' : '#2d3148';
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3000);
+  }
+
+  async function refreshStatus() {
+    const data = await api('/admin/api/status');
+    const badge = document.getElementById('statusBadge');
+    const qrImg = document.getElementById('qrImage');
+    const connectedMsg = document.getElementById('connectedMsg');
+    const advisorLabel = document.getElementById('advisorLabel');
+
+    if (data.advisor?.name) {
+      advisorLabel.textContent = `Vyntra Orbit · ${data.advisor.name}`;
+    }
+
+    if (data.connected) {
+      badge.className = 'status-badge badge-green';
+      badge.textContent = '✅ Conectado';
+      qrImg.style.display = 'none';
+      connectedMsg.style.display = 'block';
+    } else if (data.qr) {
+      badge.className = 'status-badge badge-yellow';
+      badge.textContent = '📱 Escanea el QR';
+      document.getElementById('qrImg').src = data.qr;
+      qrImg.style.display = 'block';
+      connectedMsg.style.display = 'none';
+    } else {
+      badge.className = 'status-badge badge-yellow';
+      badge.textContent = '⏳ Iniciando...';
+      qrImg.style.display = 'none';
+      connectedMsg.style.display = 'none';
+    }
+  }
+
+  async function toggleGlobal(checkbox) {
+    const paused = !checkbox.checked;
+    await api('/admin/api/pause-global', { method: 'POST', body: JSON.stringify({ paused }) });
+    showToast(paused ? '⏸️ Bot pausado globalmente' : '▶️ Bot activo', 'success');
+  }
+
+  async function forceRelogin() {
+    if (!confirm('¿Seguro que quieres cerrar la sesión de WhatsApp y generar un nuevo QR? El bot se reiniciará.')) return;
+    const data = await api('/admin/api/relogin', { method: 'POST' });
+    showToast(data.message || 'Reiniciando...', 'info');
+  }
+
+  function modeToTag(mode) {
+    switch (mode) {
+      case 'ARMED_BY_ADVISOR':  return { cls: 'tag-armed',   txt: '🎯 Armado por asesor' };
+      case 'ACTIVE':            return { cls: 'tag-active',  txt: '▶ Bot activo' };
+      case 'PAUSED_BY_ADVISOR': return { cls: 'tag-paused',  txt: '⏸ Asesor atiende' };
+      case 'PAUSED_HANDOFF':    return { cls: 'tag-handoff', txt: '🏁 Lead entregado' };
+      case 'PAUSED_ADMIN':      return { cls: 'tag-admin',   txt: '🛑 Pausado por admin' };
+      default:                  return { cls: 'tag-active',  txt: mode || '—' };
+    }
+  }
+
+  function formatAge(ts) {
+    if (!ts) return '—';
+    const diff = Date.now() - ts;
+    const mins = Math.floor(diff / 60000);
+    if (mins < 60) return `${mins}m`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 48) return `${hrs}h`;
+    return `${Math.floor(hrs / 24)}d`;
+  }
+
+  async function loadSessions() {
+    const data = await api('/admin/api/sessions');
+    const container = document.getElementById('sessionsContainer');
+
+    if (!data.sessions || data.sessions.length === 0) {
+      container.innerHTML = '<p style="color:#64748b; font-size:13px">No hay sesiones activas</p>';
+      return;
+    }
+
+    const rows = data.sessions.map(s => {
+      const tag = modeToTag(s.activationMode);
+      const phone = s.lead?.phone ? `+${s.lead.phone}` : '—';
+      const name = s.lead?.name || s.pushName || '—';
+      const interest = s.lead?.interest || '—';
+      const lastActivity = formatAge(s.updatedAt);
+      const isPaused = s.activationMode && s.activationMode !== 'ACTIVE' && s.activationMode !== 'ARMED_BY_ADVISOR';
+      const firstBy = s.firstContactBy === 'ADVISOR' ? '👤 Asesor' : '💬 Cliente';
+
+      return `
+        <tr>
+          <td>${name}</td>
+          <td>${phone}</td>
+          <td style="font-size:12px">${interest}</td>
+          <td style="font-size:11px; color:#64748b">${firstBy}</td>
+          <td style="font-size:12px">${s.step || '—'}</td>
+          <td><span class="tag ${tag.cls}">${tag.txt}</span></td>
+          <td style="font-size:11px; color:#64748b">${lastActivity}</td>
+          <td style="white-space:nowrap">
+            ${isPaused
+              ? `<button class="btn btn-success" style="padding:4px 10px; font-size:12px" onclick="reactivateSession('${s.userId}')">▶ Reactivar</button>`
+              : `<button class="btn btn-danger" style="padding:4px 10px; font-size:12px" onclick="pauseSession('${s.userId}')">⏸ Pausar</button>`
+            }
+            <button class="btn btn-secondary" style="padding:4px 10px; font-size:12px; margin-left:4px" onclick="resetSession('${s.userId}')">🗑 Reset</button>
+            <button class="btn" style="padding:4px 10px; font-size:12px; margin-left:4px; background:rgba(239,68,68,0.1); color:#f87171; border:1px solid rgba(239,68,68,0.2)" onclick="excludeFromSession('${s.userId}')">🚫 Excluir</button>
+          </td>
+        </tr>`;
+    }).join('');
+
+    container.innerHTML = `
+      <div style="overflow-x:auto">
+      <table class="sessions-table">
+        <thead><tr><th>Nombre</th><th>Teléfono</th><th>Interés</th><th>Inició</th><th>Step</th><th>Estado</th><th>Últ.</th><th>Acciones</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      </div>`;
+  }
+
+  async function reactivateSession(userId) {
+    await api('/admin/api/session/reactivate', { method: 'POST', body: JSON.stringify({ userId }) });
+    showToast('▶️ Bot reactivado para este cliente', 'success');
+    loadSessions();
+  }
+
+  async function pauseSession(userId) {
+    await api('/admin/api/session/pause', { method: 'POST', body: JSON.stringify({ userId }) });
+    showToast('⏸️ Sesión pausada', 'success');
+    loadSessions();
+  }
+
+  async function resetSession(userId) {
+    if (!confirm('¿Borrar por completo la sesión de este cliente?')) return;
+    await api('/admin/api/session/reset', { method: 'POST', body: JSON.stringify({ userId }) });
+    showToast('🔄 Sesión reseteada', 'success');
+    loadSessions();
+  }
+
+  async function excludeFromSession(userId) {
+    await api('/admin/api/excluded/add', { method: 'POST', body: JSON.stringify({ number: userId }) });
+    showToast('🚫 Número excluido del bot', 'success');
+    loadExcluded();
+    loadSessions();
+  }
+
+  async function loadExcluded() {
+    const data = await api('/admin/api/excluded');
+    const container = document.getElementById('excludedList');
+    if (!data.numbers || data.numbers.length === 0) {
+      container.innerHTML = '<p style="color:#64748b; font-size:13px">No hay números excluidos</p>';
+      return;
+    }
+    container.innerHTML = data.numbers.map(n => `
+      <div style="display:flex; align-items:center; justify-content:space-between; padding:8px 12px; border-bottom:1px solid #1e2235;">
+        <span style="font-size:14px">📱 +${n}</span>
+        <button class="btn btn-danger" style="padding:4px 10px; font-size:12px" onclick="removeExcluded('${n}')">Quitar</button>
+      </div>
+    `).join('');
+  }
+
+  async function addExcluded() {
+    const input = document.getElementById('excludeInput');
+    const number = input.value.trim();
+    if (!number) return showToast('Escribe un número', 'error');
+    await api('/admin/api/excluded/add', { method: 'POST', body: JSON.stringify({ number }) });
+    input.value = '';
+    showToast('🚫 Número excluido', 'success');
+    loadExcluded();
+  }
+
+  async function removeExcluded(number) {
+    await api('/admin/api/excluded/remove', { method: 'POST', body: JSON.stringify({ number }) });
+    showToast('✅ Número removido', 'success');
+    loadExcluded();
+  }
+
+  // Inicialización
+  refreshStatus();
+  setInterval(refreshStatus, 15000);
+  loadExcluded();
+  loadSessions();
+  setInterval(loadSessions, 30000);
+
+  api('/admin/api/status').then(data => {
+    document.getElementById('globalToggle').checked = !data.globallyPaused;
+  });
+</script>
+
+</body>
+</html>
