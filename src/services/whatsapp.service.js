@@ -16,9 +16,9 @@ import { config } from '../config/env.js';
 // ─────────────────────────────────────────────────────────────────────────────
 // ESTADO MÓDULO
 // ─────────────────────────────────────────────────────────────────────────────
-let sock         = null;
-let qrCode       = null;
-let isReady      = false;
+let sock = null;
+let qrCode = null;
+let isReady = false;
 let reconnecting = false;
 
 // Textos enviados por el bot recientemente — para distinguir bot vs asesor.
@@ -32,9 +32,9 @@ const baileysLogger = pino({ level: 'silent' });
 // ─────────────────────────────────────────────────────────────────────────────
 // GETTERS PÚBLICOS
 // ─────────────────────────────────────────────────────────────────────────────
-export function getQR()          { return qrCode; }
-export function isClientReady()  { return isReady; }
-export function getSocket()      { return sock; }
+export function getQR() { return qrCode; }
+export function isClientReady() { return isReady; }
+export function getSocket() { return sock; }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
@@ -190,9 +190,14 @@ async function handleIncomingMessage(msg, onMessage, onAdvisorMessage) {
   // Ignorar mensajes sin contenido
   if (!msg.message) return;
 
-  // Ignorar mensajes de grupos
+  // Ignorar mensajes de grupos, newsletters y status
   const jid = msg.key.remoteJid || '';
-  if (jid.endsWith('@g.us') || jid === 'status@broadcast') return;
+  if (
+    jid.endsWith('@g.us') ||
+    jid.endsWith('@newsletter') ||
+    jid.endsWith('@broadcast') ||
+    jid === 'status@broadcast'
+  ) return;
 
   // Ignorar protocol messages (eliminaciones, ediciones, etc.)
   if (msg.message.protocolMessage) return;
@@ -201,7 +206,7 @@ async function handleIncomingMessage(msg, onMessage, onAdvisorMessage) {
   if (!text) return;
 
   const messageId = msg.key.id;
-  const pushName  = msg.pushName || '';
+  const pushName = msg.pushName || '';
 
   if (msg.key.fromMe) {
     // ── MENSAJE SALIENTE: el bot o el asesor escribió ───────────────────────
