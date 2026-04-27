@@ -40,6 +40,51 @@ export async function handleMessage({ userId, text, pushName }) {
   // Guardar pushName la primera vez
   if (pushName && !session.pushName) session.pushName = pushName;
 
+  // ── 2.5. MODO ASESOR-ONLY (opcional, activado por ADVISOR_ONLY_MODE=true) ──
+  //
+  // En este modo, el bot SÓLO interactúa en conversaciones donde el asesor
+  // haya escrito primero (ARMED_BY_ADVISOR). Si el cliente escribe sin que
+  // el asesor lo haya iniciado, el bot queda silencioso y el asesor atiende
+  // manualmente.
+  //
+  // Se permite el paso si:
+  //   - La sesión está en ARMED_BY_ADVISOR (asesor ya inició → bot responde)
+  //   - La sesión ya está en flujo ACTIVE o REAWAKEN_CHOICE (conversación
+  //     ya arrancada previamente, no queremos dejar al cliente colgado)
+  //   - La sesión está pausada (otros checks de abajo manejan reawaken, etc.)
+  //
+  // Se BLOQUEA si:
+  //   - activationMode === ACTIVE y step === WELCOME (= cliente nuevo que
+  //     escribe sin que el asesor haya iniciado nada)
+  if (config.advisor.onlyMode) {
+    const isFirstContactByClient =
+      session.activationMode === ACTIVATION_MODE.ACTIVE &&
+      session.step === STEPS.WELCOME &&
+      !session.firstContactBy;
+
+    if (isFirstContactByClient) {
+      // Marcar el contacto pero NO responder. Guardar para que el panel admin
+      // pueda ver que este cliente escribió (útil para auditoría), pero el
+      // asesor lo atiende manualmente.
+      session.firstContactBy = 'CLIENT';
+      await SessionService.save(session);
+      logger.info(`[Flow] 🔒 onlyMode: cliente ${userId} escribió primero — bot silencioso`);
+      return;
+    }
+
+    // Si firstContactBy ya es 'CLIENT' y sigue en ACTIVE/WELCOME, significa
+    // que el cliente ya escribió antes y el bot lo ignoró. Seguir ignorando.
+    if (
+      session.firstContactBy === 'CLIENT' &&
+      session.activationMode === ACTIVATION_MODE.ACTIVE &&
+      session.step === STEPS.WELCOME
+    ) {
+      await SessionService.save(session);
+      logger.debug(`[Flow] 🔒 onlyMode: cliente ${userId} insiste — bot sigue silencioso`);
+      return;
+    }
+  }
+
   // ── 3. Estado ARMED_BY_ADVISOR: el asesor escribió primero, ahora responde
   //      el cliente. Hay que "despertar" el bot con el menú de transición.
   if (session.activationMode === ACTIVATION_MODE.ARMED_BY_ADVISOR) {
@@ -70,12 +115,16 @@ export async function handleMessage({ userId, text, pushName }) {
     }
 
     // ── 4b. REAWAKEN: pasaron >48h sin respuesta, mandar opciones de reconexión
-    if (SessionService.shouldReawaken(session)) {
+    //       EXCEPTO en onlyMode: ahí el bot respeta la pausa para siempre.
+    if (!config.advisor.onlyMode && SessionService.shouldReawaken(session)) {
       logger.info(`[Flow] ⏰ Reawaken para ${userId} tras ${formatHours(Date.now() - session.pausedAt)}h`);
       session.step = STEPS.REAWAKEN_CHOICE;
       // NO cambiar activationMode todavía — si el cliente ignora, seguimos pausados
       await SessionService.save(session);
-      return WhatsAppService.sendText(userId, MSG.reawaken(session.lead?.name || session.pushName));
+      // Usar pushName (nombre del contacto en WhatsApp) en vez de lead.name
+      // porque lead.name puede haber sido capturado en un flujo previo con
+      // otro nombre diferente al del contacto real.
+      return WhatsAppService.sendText(userId, MSG.reawaken(session.pushName || session.lead?.name));
     }
 
     // ── 4c. Todavía dentro de la ventana de pausa: bot silencioso ──────────
@@ -144,7 +193,18 @@ export async function handleAdvisorMessage({ clientUserId }) {
   const existed = await SessionService.exists(clientUserId);
   const session = await SessionService.get(clientUserId);
 
-  // Si el bot ya está en un estado no-activo, no tocar nada
+  // ── Si el bot YA está pausado, refrescar pausedAt para postergar reawaken ─
+  // El asesor sigue activo en la conversación, no queremos que el bot mande
+  // mensaje de reconexión sólo porque pasaron 48h desde la PRIMERA pausa.
+  // Lo que importa es cuándo fue el ÚLTIMO mensaje del asesor.
+  if (SessionService.isPaused(session)) {
+    session.pausedAt = Date.now();
+    await SessionService.save(session);
+    logger.debug(`[Flow] Asesor escribió a ${clientUserId} (ya pausado) — pausedAt refrescado`);
+    return;
+  }
+
+  // Si el bot ya está armado, no tocar nada
   if (session.activationMode !== ACTIVATION_MODE.ACTIVE) {
     logger.debug(`[Flow] Asesor escribió a ${clientUserId} pero modo=${session.activationMode}, ignorando`);
     return;

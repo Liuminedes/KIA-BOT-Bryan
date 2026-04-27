@@ -23,6 +23,12 @@ export const config = {
     portfolioUrl: process.env.ADVISOR_PORTFOLIO_URL || '',
     schedule: process.env.ADVISOR_SCHEDULE || 'L-V 8am–6:30pm | S 8am–3pm',
     segment: process.env.ADVISOR_SEGMENT || 'Segmento Vehículos Nuevos',
+    // Cuando está en true, el bot sólo responde si el asesor inició la
+    // conversación (estado ARMED_BY_ADVISOR). Mensajes de clientes que
+    // escriben primero son ignorados por el bot — el asesor los atiende.
+    // Útil cuando el asesor quiere preservar trazabilidad con clientes
+    // que ya tenía en su agenda.
+    onlyMode: process.env.ADVISOR_ONLY_MODE === 'true',
   },
 
   admin: {

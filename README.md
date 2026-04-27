@@ -146,6 +146,32 @@ La idea: **un servicio por asesor en Railway**, mismo código, distintas env var
 
 ---
 
+## 🔒 Modo bot selectivo (ADVISOR_ONLY_MODE)
+
+Feature opcional para asesores que ya tienen clientes con relación previa y no
+quieren que el bot intervenga en esas conversaciones.
+
+### Cuándo activarlo
+Cuando el asesor dice: *"no quiero que el bot les hable a mis clientes de siempre, solo quiero que me ayude con los prospectos nuevos que yo inicio"*.
+
+### Cómo funciona
+Con `ADVISOR_ONLY_MODE=true`:
+
+- ✅ Asesor escribe primero a prospecto nuevo → bot queda armado → cuando el cliente responde, entra con menú de transición
+- ❌ Cliente nuevo escribe al asesor sin que él lo haya iniciado → bot silencioso, asesor atiende manual
+- ❌ Cliente viejo con historial escribe → bot silencioso
+- ❌ Cuando el asesor pausa, se respeta **indefinidamente** (no hay reawaken a las 48h)
+
+### Cómo activarlo
+En Railway, añadir la variable:
+```
+ADVISOR_ONLY_MODE=true
+```
+
+Por defecto está en `false` (comportamiento estándar: el bot responde a todos).
+
+---
+
 ## 🤔 Cómo se inicia la conversación
 
 Tres escenarios soportados, ordenados por prioridad de detección:
@@ -304,4 +330,3 @@ Todos requieren `Authorization: Bearer <ADMIN_TOKEN>` o `?token=...` en la URL.
 ---
 
 Desarrollado por **Vyntra Orbit** 🛰️
-# KIA-BOT-Bryan

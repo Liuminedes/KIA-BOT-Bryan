@@ -140,7 +140,9 @@ router.post('/api/relogin', auth, async (_req, res) => {
     }
     logger.warn('[Admin] Relogin forzado — reiniciando proceso en 2s');
     res.json({ success: true, message: 'Reiniciando, escanea el nuevo QR en breve.' });
-    setTimeout(() => process.exit(0), 2000);
+    // exit(1) para que Railway interprete como fallo y reinicie automáticamente
+    // según la política restartPolicyType: "ON_FAILURE" de railway.json
+    setTimeout(() => process.exit(1), 2000);
   } catch (err) {
     logger.error(`[Admin] Error en relogin: ${err.message}`);
     res.status(500).json({ error: err.message });

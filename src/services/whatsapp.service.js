@@ -9,16 +9,15 @@ const {
 import { Boom } from '@hapi/boom';
 import pino from 'pino';
 import fs from 'fs';
-import path from 'path';
 import { logger } from '../config/logger.js';
 import { config } from '../config/env.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ESTADO MÓDULO
 // ─────────────────────────────────────────────────────────────────────────────
-let sock = null;
-let qrCode = null;
-let isReady = false;
+let sock         = null;
+let qrCode       = null;
+let isReady      = false;
 let reconnecting = false;
 
 // Textos enviados por el bot recientemente — para distinguir bot vs asesor.
@@ -32,9 +31,9 @@ const baileysLogger = pino({ level: 'silent' });
 // ─────────────────────────────────────────────────────────────────────────────
 // GETTERS PÚBLICOS
 // ─────────────────────────────────────────────────────────────────────────────
-export function getQR() { return qrCode; }
-export function isClientReady() { return isReady; }
-export function getSocket() { return sock; }
+export function getQR()          { return qrCode; }
+export function isClientReady()  { return isReady; }
+export function getSocket()      { return sock; }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
@@ -190,7 +189,7 @@ async function handleIncomingMessage(msg, onMessage, onAdvisorMessage) {
   // Ignorar mensajes sin contenido
   if (!msg.message) return;
 
-  // Ignorar mensajes de grupos, newsletters y status
+  // Ignorar mensajes de grupos, newsletters, canales y status broadcast
   const jid = msg.key.remoteJid || '';
   if (
     jid.endsWith('@g.us') ||
@@ -206,7 +205,7 @@ async function handleIncomingMessage(msg, onMessage, onAdvisorMessage) {
   if (!text) return;
 
   const messageId = msg.key.id;
-  const pushName = msg.pushName || '';
+  const pushName  = msg.pushName || '';
 
   if (msg.key.fromMe) {
     // ── MENSAJE SALIENTE: el bot o el asesor escribió ───────────────────────
