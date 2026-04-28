@@ -66,12 +66,22 @@ function normalizeJid(jid) {
 }
 
 /**
+ * Extrae solo la parte de identidad del JID (sin sufijo @s.whatsapp.net o @lid).
+ * Útil para matching consistente porque el mismo contacto puede llegar a veces
+ * como "573001234567@s.whatsapp.net" y otras como "186874496860292@lid".
+ */
+function extractJidIdentity(jid) {
+  if (!jid) return '';
+  return normalizeJid(jid).replace(/@.*$/, '');
+}
+
+/**
  * Verifica si el JID corresponde al propio asesor (para ignorar sus mensajes).
  */
 function isAdvisorJid(jid) {
   if (!config.advisor.phone || !jid) return false;
-  const phone = normalizeJid(jid).replace(/@.*$/, '');
-  return phone === config.advisor.phone;
+  const identity = extractJidIdentity(jid);
+  return identity === config.advisor.phone;
 }
 
 /**
@@ -210,12 +220,15 @@ async function handleIncomingMessage(msg, onMessage, onAdvisorMessage) {
   if (msg.key.fromMe) {
     // ── MENSAJE SALIENTE: el bot o el asesor escribió ───────────────────────
     const clientUserId = normalizeJid(jid);
+    const clientIdentity = extractJidIdentity(clientUserId);
 
     // Si el destino es el propio asesor (ej: notificación de lead), ignorar
     if (isAdvisorJid(clientUserId)) return;
 
-    // Clave: destinatario + primeros 80 chars del texto
-    const key = `${clientUserId}|${text.substring(0, 80)}`;
+    // Clave: solo identidad numérica + primeros 80 chars del texto.
+    // Usamos extractJidIdentity para que matchee consistentemente sin importar
+    // si el JID viene como @s.whatsapp.net o @lid.
+    const key = `${clientIdentity}|${text.substring(0, 80)}`;
 
     if (botSentTexts.has(key)) {
       // Fue el bot — ignorar
@@ -255,10 +268,13 @@ export const WhatsAppService = {
     }
     try {
       const jid = to.includes('@') ? to : `${to}@s.whatsapp.net`;
+      const identity = extractJidIdentity(jid);
 
       // Registrar ANTES de enviar para que el echo saliente no dispare
-      // onAdvisorMessage por error
-      const key = `${jid}|${text.substring(0, 80)}`;
+      // onAdvisorMessage por error.
+      // Usamos solo la identidad (sin sufijo @s.whatsapp.net o @lid) para que
+      // el matching funcione aunque el echo venga con sufijo distinto.
+      const key = `${identity}|${text.substring(0, 80)}`;
       botSentTexts.add(key);
       setTimeout(() => botSentTexts.delete(key), BOT_TEXT_TTL);
 
