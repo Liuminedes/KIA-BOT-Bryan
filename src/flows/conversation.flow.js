@@ -21,12 +21,17 @@ const CREDIT_MAP = { '1': 'clean', '2': 'reported', '3': 'unknown' };
 // ENTRADA PRINCIPAL — MENSAJE DEL CLIENTE
 // ═════════════════════════════════════════════════════════════════════════════
 export async function handleMessage({ userId, text, pushName }) {
+  logger.info(`[Flow] ▶ ENTRADA handleMessage ${userId} pushName="${pushName}" text="${text?.substring(0, 60)}"`);
+
   // ── 1. Pausa global admin ──────────────────────────────────────────────────
-  if (await SessionService.isGloballyPaused()) return;
+  if (await SessionService.isGloballyPaused()) {
+    logger.info(`[Flow] ⏹ DESCARTE: bot globalmente pausado`);
+    return;
+  }
 
   // ── 2. Número excluido ─────────────────────────────────────────────────────
   if (await SessionService.isExcluded(userId)) {
-    logger.debug(`[Flow] Número excluido: ${userId}`);
+    logger.info(`[Flow] ⏹ DESCARTE: número excluido ${userId}`);
     return;
   }
 
@@ -34,127 +39,117 @@ export async function handleMessage({ userId, text, pushName }) {
   const input    = (text || '').trim().toLowerCase();
   const inputNum = input.replace(/[^\d]/g, '');
 
-  // Marcar que el cliente escribió (para distinguir cliente nuevo vs recurrente)
+  logger.info(`[Flow] ⓘ SESIÓN cargada: step=${session.step} mode=${session.activationMode} firstBy=${session.firstContactBy || 'null'} lastClientMsg=${session.lastClientMessageAt ? 'sí' : 'no'}`);
+
+  // Marcar que el cliente escribió
   SessionService.markClientMessage(session);
 
   // Guardar pushName la primera vez
   if (pushName && !session.pushName) session.pushName = pushName;
 
-  // ── 2.5. MODO ASESOR-ONLY (opcional, activado por ADVISOR_ONLY_MODE=true) ──
-  //
-  // En este modo, el bot SÓLO interactúa en conversaciones donde el asesor
-  // haya escrito primero (ARMED_BY_ADVISOR). Si el cliente escribe sin que
-  // el asesor lo haya iniciado, el bot queda silencioso y el asesor atiende
-  // manualmente.
-  //
-  // Se permite el paso si:
-  //   - La sesión está en ARMED_BY_ADVISOR (asesor ya inició → bot responde)
-  //   - La sesión ya está en flujo ACTIVE o REAWAKEN_CHOICE (conversación
-  //     ya arrancada previamente, no queremos dejar al cliente colgado)
-  //   - La sesión está pausada (otros checks de abajo manejan reawaken, etc.)
-  //
-  // Se BLOQUEA si:
-  //   - activationMode === ACTIVE y step === WELCOME (= cliente nuevo que
-  //     escribe sin que el asesor haya iniciado nada)
+  // ── 3. ADVISOR_ONLY_MODE (solo para Gerardo) ──────────────────────────────
+  // Si el asesor activó esta variable, el bot SOLO atiende cuando él inicia
+  // la conversación. Para Bryan/Nataly esta variable NO está → este bloque
+  // se salta completo.
   if (config.advisor.onlyMode) {
+    logger.info(`[Flow] 🔒 onlyMode activo, evaluando...`);
     const isFirstContactByClient =
       session.activationMode === ACTIVATION_MODE.ACTIVE &&
       session.step === STEPS.WELCOME &&
       !session.firstContactBy;
 
     if (isFirstContactByClient) {
-      // Marcar el contacto pero NO responder. Guardar para que el panel admin
-      // pueda ver que este cliente escribió (útil para auditoría), pero el
-      // asesor lo atiende manualmente.
       session.firstContactBy = 'CLIENT';
       await SessionService.save(session);
-      logger.info(`[Flow] 🔒 onlyMode: cliente ${userId} escribió primero — bot silencioso`);
+      logger.info(`[Flow] ⏹ onlyMode: cliente escribió primero — bot silencioso`);
       return;
     }
 
-    // Si firstContactBy ya es 'CLIENT' y sigue en ACTIVE/WELCOME, significa
-    // que el cliente ya escribió antes y el bot lo ignoró. Seguir ignorando.
     if (
       session.firstContactBy === 'CLIENT' &&
       session.activationMode === ACTIVATION_MODE.ACTIVE &&
       session.step === STEPS.WELCOME
     ) {
       await SessionService.save(session);
-      logger.debug(`[Flow] 🔒 onlyMode: cliente ${userId} insiste — bot sigue silencioso`);
+      logger.info(`[Flow] ⏹ onlyMode: cliente insiste — bot sigue silencioso`);
       return;
     }
   }
 
-  // ── 3. Estado ARMED_BY_ADVISOR: el asesor escribió primero, ahora responde
-  //      el cliente. Hay que "despertar" el bot con el menú de transición.
+  // ── 4. ARMED_BY_ADVISOR: el asesor escribió primero, ahora responde el cliente
+  //      (solo aplica para Gerardo en onlyMode, para Bryan nunca llega acá)
   if (session.activationMode === ACTIVATION_MODE.ARMED_BY_ADVISOR) {
-    // Si pasó mucho tiempo desde el armado, tratar como cliente nuevo
+    logger.info(`[Flow] 🎯 Cliente responde tras armado por asesor`);
+
     if (SessionService.isArmedWindowExpired(session)) {
-      logger.info(`[Flow] Ventana armada expiró para ${userId} — tratando como nuevo`);
+      logger.info(`[Flow] Ventana armada expiró — tratando como cliente nuevo`);
       SessionService.markActive(session, true);
       await SessionService.save(session);
       return handleWelcome(userId, session, text, pushName);
     }
 
-    logger.info(`[Flow] 🎯 Cliente responde tras armado por asesor: ${userId}`);
     session.activationMode = ACTIVATION_MODE.ACTIVE;
     session.step           = STEPS.MENU;
     session.armedAt        = null;
     await SessionService.save(session);
+    logger.info(`[Flow] → Enviando MSG.armedHandoff()`);
     return WhatsAppService.sendText(userId, MSG.armedHandoff());
   }
 
-  // ── 4. Estados pausados (ADVISOR, HANDOFF, ADMIN) ─────────────────────────
+  // ── 5. Estados pausados (ADVISOR, HANDOFF, ADMIN) ─────────────────────────
   if (SessionService.isPaused(session)) {
+    logger.info(`[Flow] Sesión pausada (mode=${session.activationMode})`);
 
-    // ── 4a. Reset manual explícito ("menu") siempre disponible ──────────────
+    // 5a. "menu" reactiva el bot manualmente
     if (RESET_KEYWORDS.includes(input)) {
+      logger.info(`[Flow] ⚡ Keyword reset detectada — reactivando bot`);
       SessionService.markActive(session, true);
       await SessionService.save(session);
       return handleWelcome(userId, session, text, pushName);
     }
 
-    // ── 4b. REAWAKEN: pasaron >48h sin respuesta, mandar opciones de reconexión
-    //       EXCEPTO en onlyMode: ahí el bot respeta la pausa para siempre.
+    // 5b. REAWAKEN si pasaron >48h y no estamos en onlyMode
     if (!config.advisor.onlyMode && SessionService.shouldReawaken(session)) {
-      logger.info(`[Flow] ⏰ Reawaken para ${userId} tras ${formatHours(Date.now() - session.pausedAt)}h`);
+      const horas = formatHours(Date.now() - session.pausedAt);
+      logger.info(`[Flow] ⏰ Reawaken para ${userId} tras ${horas}h`);
       session.step = STEPS.REAWAKEN_CHOICE;
-      // NO cambiar activationMode todavía — si el cliente ignora, seguimos pausados
       await SessionService.save(session);
-      // Usar pushName (nombre del contacto en WhatsApp) en vez de lead.name
-      // porque lead.name puede haber sido capturado en un flujo previo con
-      // otro nombre diferente al del contacto real.
+      logger.info(`[Flow] → Enviando MSG.reawaken()`);
       return WhatsAppService.sendText(userId, MSG.reawaken(session.pushName || session.lead?.name));
     }
 
-    // ── 4c. Todavía dentro de la ventana de pausa: bot silencioso ──────────
+    // 5c. Bot silencioso (asesor está atendiendo)
     await SessionService.save(session);
+    logger.info(`[Flow] ⏹ Bot silencioso (asesor atiende). Cliente debe escribir "menu" para volver al bot.`);
     return;
   }
 
-  // ── 5. Paso especial: el cliente está eligiendo en el menú de reawaken ────
+  // ── 6. Paso REAWAKEN_CHOICE ────────────────────────────────────────────────
   if (session.step === STEPS.REAWAKEN_CHOICE) {
+    logger.info(`[Flow] Cliente está en REAWAKEN_CHOICE, procesando elección`);
     return handleReawakenChoice(userId, session, inputNum, input);
   }
 
-  // ── 6. Keywords globales de reset ──────────────────────────────────────────
+  // ── 7. Keywords globales de reset ─────────────────────────────────────────
   if (RESET_KEYWORDS.includes(input)) {
+    logger.info(`[Flow] ⚡ Keyword reset detectada en flujo activo — reset al WELCOME`);
     SessionService.markActive(session, true);
     await SessionService.save(session);
     return handleWelcome(userId, session, text, pushName);
   }
 
-  // ── 7. Keywords de handoff directo (después del menú inicial) ─────────────
+  // ── 8. Keywords de handoff directo ────────────────────────────────────────
   if (
     session.step !== STEPS.WELCOME &&
     HANDOFF_KEYWORDS.some(kw => input.includes(kw))
   ) {
+    logger.info(`[Flow] ⚡ Keyword handoff detectada — pasando a asesor`);
     return triggerHandoffDirect(userId, session);
   }
 
-  logger.debug(`[Flow] ${userId} step=${session.step} mode=${session.activationMode} input="${input.substring(0, 40)}"`);
+  logger.info(`[Flow] → Despachando step=${session.step}`);
 
-  // ── 8. Máquina de estados del flujo de calificación ────────────────────────
+  // ── 9. Máquina de estados ──────────────────────────────────────────────────
   switch (session.step) {
     case STEPS.WELCOME:            return handleWelcome(userId, session, text, pushName);
     case STEPS.MENU:               return handleMenu(userId, session, inputNum, input);
@@ -168,7 +163,9 @@ export async function handleMessage({ userId, text, pushName }) {
     case STEPS.CREDIT_CHECK:       return handleCreditCheck(userId, session, inputNum, input);
     case STEPS.ASK_LEAD_NAME:      return handleAskLeadName(userId, session, text);
     case STEPS.ASK_LEAD_PHONE:     return handleAskLeadPhone(userId, session, text);
-    default:                       return handleWelcome(userId, session, text, pushName);
+    default:
+      logger.warn(`[Flow] ⚠️ Step desconocido "${session.step}" — fallback a WELCOME`);
+      return handleWelcome(userId, session, text, pushName);
   }
 }
 
@@ -190,47 +187,43 @@ export async function handleMessage({ userId, text, pushName }) {
  *     cada vez).
  */
 export async function handleAdvisorMessage({ clientUserId }) {
+  logger.info(`[Flow] ▶ ENTRADA handleAdvisorMessage para ${clientUserId}`);
+
   const existed = await SessionService.exists(clientUserId);
   const session = await SessionService.get(clientUserId);
 
+  logger.info(`[Flow] ⓘ ADVISOR_MSG: existed=${existed} mode=${session.activationMode} step=${session.step} firstBy=${session.firstContactBy || 'null'}`);
+
   // ── Si el bot YA está pausado, refrescar pausedAt para postergar reawaken ─
-  // El asesor sigue activo en la conversación, no queremos que el bot mande
-  // mensaje de reconexión sólo porque pasaron 48h desde la PRIMERA pausa.
   if (SessionService.isPaused(session)) {
     session.pausedAt = Date.now();
     await SessionService.save(session);
-    logger.debug(`[Flow] Asesor escribió a ${clientUserId} (ya pausado) — pausedAt refrescado`);
+    logger.info(`[Flow] ⓘ Asesor escribió a ${clientUserId} (ya pausado) — pausedAt refrescado`);
     return;
   }
 
-  // Si el bot ya está armado, no tocar nada (Gerardo en onlyMode siguió escribiendo)
+  // Si el bot ya está armado, no tocar nada
   if (session.activationMode === ACTIVATION_MODE.ARMED_BY_ADVISOR) {
-    logger.debug(`[Flow] Asesor escribió a ${clientUserId} (ya ARMADO), ignorando`);
+    logger.info(`[Flow] ⓘ Asesor escribió a ${clientUserId} (ya ARMADO), ignorando`);
     return;
   }
 
-  // ── ARMED solo aplica en modo selectivo (Gerardo). Para el resto de asesores
-  //    (Bryan, Nataly), CUALQUIER mensaje saliente detectado pausa el bot.
-  //    Esto es idéntico al comportamiento del bot original con whatsapp-web.js
-  //    y evita el loop de auto-armado por mismatches del Set botSentTexts.
+  // ── ARMED solo aplica en onlyMode (Gerardo). Para Bryan/Nataly: pausar siempre.
   if (config.advisor.onlyMode) {
     const clientHasMessaged = SessionService.hasClientEverMessaged(session);
 
     if (!existed || !clientHasMessaged) {
-      // ── CASO A: Asesor rompe el hielo (solo en onlyMode) ──────────────────
       SessionService.markArmedByAdvisor(session);
       await SessionService.save(session);
-      logger.info(`[Flow] 🎯 Asesor rompió el hielo con ${clientUserId} — bot ARMADO`);
+      logger.info(`[Flow] 🎯 onlyMode: Asesor rompió el hielo con ${clientUserId} — bot ARMADO`);
       return;
     }
   }
 
-  // ── CASO POR DEFECTO: Asesor escribió → pausar bot ─────────────────────────
-  // Aplica para Bryan/Nataly siempre, y para Gerardo cuando el cliente ya
-  // había escrito antes (interrupción, no rompe-hielo).
+  // ── COMPORTAMIENTO ESTÁNDAR (Bryan, Nataly): pausar bot siempre ───────────
   SessionService.markPausedByAdvisor(session);
   await SessionService.save(session);
-  logger.info(`[Flow] ⏸️  Asesor escribió a ${clientUserId} — bot PAUSADO`);
+  logger.info(`[Flow] ⏸ Asesor escribió a ${clientUserId} — bot PAUSADO`);
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -238,29 +231,38 @@ export async function handleAdvisorMessage({ clientUserId }) {
 // ═════════════════════════════════════════════════════════════════════════════
 
 async function handleWelcome(userId, session, _text, pushName) {
+  logger.info(`[Flow] ▶ handleWelcome ejecutando para ${userId}`);
   session.step           = STEPS.MENU;
   session.activationMode = ACTIVATION_MODE.ACTIVE;
   if (pushName) session.pushName = pushName;
   await SessionService.save(session);
+  logger.info(`[Flow] → Enviando MSG.advisorIntroduced() a ${userId}`);
   await WhatsAppService.sendText(userId, MSG.advisorIntroduced());
   await delay(600);
+  logger.info(`[Flow] → Enviando MSG.menu() a ${userId}`);
   return WhatsAppService.sendText(userId, MSG.menu());
 }
 
 async function handleMenu(userId, session, inputNum, input) {
+  logger.info(`[Flow] ▶ handleMenu inputNum="${inputNum}" input="${input}"`);
+
   if (inputNum === '1' || input.includes('catalog') || input.includes('vehiculo') || input.includes('vehículo')) {
+    logger.info(`[Flow] → Opción 1: catálogo`);
     session.step = STEPS.CATALOG_TYPE;
     await SessionService.save(session);
     return WhatsAppService.sendText(userId, MSG.catalogType());
   }
   if (inputNum === '2' || input.includes('cotiz')) {
+    logger.info(`[Flow] → Opción 2: cotización`);
     session.step = STEPS.CAPTURE_INTEREST;
     await SessionService.save(session);
     return WhatsAppService.sendText(userId, MSG.askInterest(session.lead.name || 'amigo'));
   }
   if (inputNum === '3') {
+    logger.info(`[Flow] → Opción 3: handoff directo`);
     return triggerHandoffDirect(userId, session);
   }
+  logger.info(`[Flow] ⚠ Opción no reconocida, repitiendo menú`);
   return WhatsAppService.sendText(userId, MSG.menu());
 }
 

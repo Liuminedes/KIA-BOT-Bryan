@@ -223,21 +223,23 @@ async function handleIncomingMessage(msg, onMessage, onAdvisorMessage) {
     const clientIdentity = extractJidIdentity(clientUserId);
 
     // Si el destino es el propio asesor (ej: notificación de lead), ignorar
-    if (isAdvisorJid(clientUserId)) return;
+    if (isAdvisorJid(clientUserId)) {
+      logger.debug(`[WA] Saliente al propio asesor, ignorando`);
+      return;
+    }
 
     // Clave: solo identidad numérica + primeros 80 chars del texto.
-    // Usamos extractJidIdentity para que matchee consistentemente sin importar
-    // si el JID viene como @s.whatsapp.net o @lid.
     const key = `${clientIdentity}|${text.substring(0, 80)}`;
 
     if (botSentTexts.has(key)) {
       // Fue el bot — ignorar
       botSentTexts.delete(key);
+      logger.debug(`[WA] ✓ Saliente reconocido como del bot (${clientIdentity})`);
       return;
     }
 
     // No es del bot → el asesor escribió manualmente
-    logger.info(`[WA] → Asesor escribió a ${clientUserId}: ${text.substring(0, 60)}`);
+    logger.info(`[WA] → Asesor escribió a ${clientUserId}: "${text.substring(0, 60)}"`);
     await onAdvisorMessage({ clientUserId, text });
 
   } else {
@@ -245,9 +247,12 @@ async function handleIncomingMessage(msg, onMessage, onAdvisorMessage) {
     const userId = normalizeJid(jid);
 
     // Ignorar mensajes del propio asesor (si el asesor se escribe a sí mismo)
-    if (isAdvisorJid(userId)) return;
+    if (isAdvisorJid(userId)) {
+      logger.debug(`[WA] Entrante del propio asesor, ignorando`);
+      return;
+    }
 
-    logger.info(`[WA] ← ${userId} (${pushName}): ${text.substring(0, 60)}`);
+    logger.info(`[WA] ← ${userId} (${pushName}): "${text.substring(0, 60)}"`);
     await onMessage({ userId, text, pushName, messageId });
   }
 }
@@ -263,7 +268,7 @@ export const WhatsAppService = {
    */
   async sendText(to, text) {
     if (!isReady || !sock) {
-      logger.warn(`[WA] No listo — no se envió a ${to}`);
+      logger.warn(`[WA] ⚠ No listo — no se envió a ${to}: "${text.substring(0, 50)}"`);
       return;
     }
     try {
@@ -272,16 +277,14 @@ export const WhatsAppService = {
 
       // Registrar ANTES de enviar para que el echo saliente no dispare
       // onAdvisorMessage por error.
-      // Usamos solo la identidad (sin sufijo @s.whatsapp.net o @lid) para que
-      // el matching funcione aunque el echo venga con sufijo distinto.
       const key = `${identity}|${text.substring(0, 80)}`;
       botSentTexts.add(key);
       setTimeout(() => botSentTexts.delete(key), BOT_TEXT_TTL);
 
       await sock.sendMessage(jid, { text });
-      logger.debug(`[WA] Enviado a ${jid}`);
+      logger.info(`[WA] ✓ Bot envió a ${jid}: "${text.substring(0, 60)}"`);
     } catch (err) {
-      logger.error(`[WA] Error enviando a ${to}: ${err.message}`);
+      logger.error(`[WA] ✗ Error enviando a ${to}: ${err.message}`);
     }
   },
 

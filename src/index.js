@@ -53,15 +53,21 @@ async function bootstrap() {
     await initWhatsApp(
       // ── Mensaje entrante del cliente ────────────────────────────────────────
       async ({ userId, text, pushName }) => {
-        await handleMessage({ userId, text, pushName }).catch(err => {
-          logger.error(`[Flow] Error en handleMessage: ${err.message}`);
-        });
+        try {
+          await handleMessage({ userId, text, pushName });
+        } catch (err) {
+          logger.error(`[Flow] ✗ Error en handleMessage: ${err.message}`);
+          logger.error(`[Flow] Stack: ${err.stack}`);
+        }
       },
       // ── Mensaje saliente detectado como manual (asesor escribió) ───────────
       async ({ clientUserId, text }) => {
-        await handleAdvisorMessage({ clientUserId, text }).catch(err => {
-          logger.error(`[Flow] Error en handleAdvisorMessage: ${err.message}`);
-        });
+        try {
+          await handleAdvisorMessage({ clientUserId, text });
+        } catch (err) {
+          logger.error(`[Flow] ✗ Error en handleAdvisorMessage: ${err.message}`);
+          logger.error(`[Flow] Stack: ${err.stack}`);
+        }
       }
     );
 
