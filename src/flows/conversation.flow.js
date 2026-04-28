@@ -196,7 +196,6 @@ export async function handleAdvisorMessage({ clientUserId }) {
   // ── Si el bot YA está pausado, refrescar pausedAt para postergar reawaken ─
   // El asesor sigue activo en la conversación, no queremos que el bot mande
   // mensaje de reconexión sólo porque pasaron 48h desde la PRIMERA pausa.
-  // Lo que importa es cuándo fue el ÚLTIMO mensaje del asesor.
   if (SessionService.isPaused(session)) {
     session.pausedAt = Date.now();
     await SessionService.save(session);
@@ -204,25 +203,34 @@ export async function handleAdvisorMessage({ clientUserId }) {
     return;
   }
 
-  // Si el bot ya está armado, no tocar nada
-  if (session.activationMode !== ACTIVATION_MODE.ACTIVE) {
-    logger.debug(`[Flow] Asesor escribió a ${clientUserId} pero modo=${session.activationMode}, ignorando`);
+  // Si el bot ya está armado, no tocar nada (Gerardo en onlyMode siguió escribiendo)
+  if (session.activationMode === ACTIVATION_MODE.ARMED_BY_ADVISOR) {
+    logger.debug(`[Flow] Asesor escribió a ${clientUserId} (ya ARMADO), ignorando`);
     return;
   }
 
-  const clientHasMessaged = SessionService.hasClientEverMessaged(session);
+  // ── ARMED solo aplica en modo selectivo (Gerardo). Para el resto de asesores
+  //    (Bryan, Nataly), CUALQUIER mensaje saliente detectado pausa el bot.
+  //    Esto es idéntico al comportamiento del bot original con whatsapp-web.js
+  //    y evita el loop de auto-armado por mismatches del Set botSentTexts.
+  if (config.advisor.onlyMode) {
+    const clientHasMessaged = SessionService.hasClientEverMessaged(session);
 
-  if (!existed || !clientHasMessaged) {
-    // ── CASO A: Asesor rompe el hielo ──────────────────────────────────────
-    SessionService.markArmedByAdvisor(session);
-    await SessionService.save(session);
-    logger.info(`[Flow] 🎯 Asesor rompió el hielo con ${clientUserId} — bot ARMADO`);
-  } else {
-    // ── CASO B: Asesor interrumpe al bot ───────────────────────────────────
-    SessionService.markPausedByAdvisor(session);
-    await SessionService.save(session);
-    logger.info(`[Flow] ⏸️  Asesor interrumpió al bot con ${clientUserId}`);
+    if (!existed || !clientHasMessaged) {
+      // ── CASO A: Asesor rompe el hielo (solo en onlyMode) ──────────────────
+      SessionService.markArmedByAdvisor(session);
+      await SessionService.save(session);
+      logger.info(`[Flow] 🎯 Asesor rompió el hielo con ${clientUserId} — bot ARMADO`);
+      return;
+    }
   }
+
+  // ── CASO POR DEFECTO: Asesor escribió → pausar bot ─────────────────────────
+  // Aplica para Bryan/Nataly siempre, y para Gerardo cuando el cliente ya
+  // había escrito antes (interrupción, no rompe-hielo).
+  SessionService.markPausedByAdvisor(session);
+  await SessionService.save(session);
+  logger.info(`[Flow] ⏸️  Asesor escribió a ${clientUserId} — bot PAUSADO`);
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
