@@ -25,6 +25,12 @@ let reconnecting = false;
 const botSentTexts = new Set();
 const BOT_TEXT_TTL = 10_000;
 
+// Mapa LID → JID real (ej: "186874496860292@lid" → "573001234567@s.whatsapp.net")
+// Se construye dinámicamente cuando llegan mensajes entrantes que incluyen
+// ambos identificadores. WhatsApp Multi-Device usa @lid por privacidad pero
+// los envíos a veces solo funcionan con el JID real (@s.whatsapp.net).
+const lidToJidMap = new Map();
+
 // Logger silencioso para Baileys (muy verboso por defecto)
 const baileysLogger = pino({ level: 'silent' });
 
@@ -217,6 +223,21 @@ async function handleIncomingMessage(msg, onMessage, onAdvisorMessage) {
   const messageId = msg.key.id;
   const pushName  = msg.pushName || '';
 
+  // ── Construir mapa LID → JID real ─────────────────────────────────────────
+  // Cuando llega un mensaje con @lid en remoteJid, Baileys puede incluir el
+  // número real en otros campos del key. Lo guardamos para usarlo al enviar.
+  if (jid.endsWith('@lid')) {
+    // msg.key.senderPn contiene el JID real "@s.whatsapp.net" (Phone Number)
+    const realJid = msg.key.senderPn || msg.key.participantPn;
+    if (realJid && realJid.endsWith('@s.whatsapp.net')) {
+      const previousMapping = lidToJidMap.get(jid);
+      if (previousMapping !== realJid) {
+        lidToJidMap.set(jid, realJid);
+        logger.info(`[WA] 🔗 Mapeado ${jid} → ${realJid}`);
+      }
+    }
+  }
+
   if (msg.key.fromMe) {
     // ── MENSAJE SALIENTE: el bot o el asesor escribió ───────────────────────
     const clientUserId = normalizeJid(jid);
@@ -272,7 +293,18 @@ export const WhatsAppService = {
       return;
     }
     try {
-      const jid = to.includes('@') ? to : `${to}@s.whatsapp.net`;
+      let jid = to.includes('@') ? to : `${to}@s.whatsapp.net`;
+
+      // Si el destino es un @lid, intentar resolverlo al JID real antes de enviar.
+      // WhatsApp Multi-Device a veces no entrega mensajes a @lid directamente.
+      if (jid.endsWith('@lid') && lidToJidMap.has(jid)) {
+        const resolvedJid = lidToJidMap.get(jid);
+        logger.info(`[WA] 🔗 Resolviendo ${jid} → ${resolvedJid} para envío`);
+        jid = resolvedJid;
+      } else if (jid.endsWith('@lid')) {
+        logger.warn(`[WA] ⚠ Enviando a ${jid} sin mapping LID→PN. El mensaje puede no llegar.`);
+      }
+
       const identity = extractJidIdentity(jid);
 
       // Registrar ANTES de enviar para que el echo saliente no dispare
@@ -281,8 +313,8 @@ export const WhatsAppService = {
       botSentTexts.add(key);
       setTimeout(() => botSentTexts.delete(key), BOT_TEXT_TTL);
 
-      await sock.sendMessage(jid, { text });
-      logger.info(`[WA] ✓ Bot envió a ${jid}: "${text.substring(0, 60)}"`);
+      const result = await sock.sendMessage(jid, { text });
+      logger.info(`[WA] ✓ Bot envió a ${jid}: "${text.substring(0, 60)}" (msgId: ${result?.key?.id || '?'})`);
     } catch (err) {
       logger.error(`[WA] ✗ Error enviando a ${to}: ${err.message}`);
     }
