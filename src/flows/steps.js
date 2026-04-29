@@ -1,6 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// ESTADOS DEL FLUJO DE CONVERSACIÓN
-// ─────────────────────────────────────────────────────────────────────────────
 export const STEPS = {
   WELCOME:            'WELCOME',
   MENU:               'MENU',
@@ -16,44 +13,11 @@ export const STEPS = {
   ASK_LEAD_PHONE:     'ASK_LEAD_PHONE',
   QUALIFIED:          'QUALIFIED',
   HANDOFF:            'HANDOFF',
-  // Estado de "reconexión" tras pausa larga — el cliente elige si seguir con
-  // el asesor o volver al menú del bot
-  REAWAKEN_CHOICE:    'REAWAKEN_CHOICE',
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MODOS DE ACTIVACIÓN DEL BOT (reemplaza los booleanos bryantook / handoffMode)
-// ─────────────────────────────────────────────────────────────────────────────
-export const ACTIVATION_MODE = {
-  // Bot respondiendo normalmente
-  ACTIVE:             'ACTIVE',
-  // El asesor tomó la conversación manualmente (interrumpió al bot)
-  PAUSED_BY_ADVISOR:  'PAUSED_BY_ADVISOR',
-  // El flujo de calificación completó y el lead fue entregado
-  PAUSED_HANDOFF:     'PAUSED_HANDOFF',
-  // Pausa manual desde el panel admin (por cliente específico)
-  PAUSED_ADMIN:       'PAUSED_ADMIN',
-  // El asesor escribió primero a un cliente nuevo. Bot silencioso esperando
-  // que el cliente responda para entrar a calificar.
-  ARMED_BY_ADVISOR:   'ARMED_BY_ADVISOR',
-};
+export const RESET_KEYWORDS   = ['menu', 'reiniciar'];
+export const HANDOFF_KEYWORDS = ['asesor', 'hablar con alguien', 'persona', 'humano', 'vendedor', 'hablar con bryan'];
 
-// Conjunto de modos en los que el bot está "pausado" (no responde por flujo normal)
-export const PAUSED_MODES = new Set([
-  ACTIVATION_MODE.PAUSED_BY_ADVISOR,
-  ACTIVATION_MODE.PAUSED_HANDOFF,
-  ACTIVATION_MODE.PAUSED_ADMIN,
-]);
-
-// ─────────────────────────────────────────────────────────────────────────────
-// KEYWORDS
-// ─────────────────────────────────────────────────────────────────────────────
-export const RESET_KEYWORDS   = ['menu', 'menú', 'reiniciar'];
-export const HANDOFF_KEYWORDS = ['asesor', 'hablar con alguien', 'persona', 'humano', 'vendedor'];
-
-// ─────────────────────────────────────────────────────────────────────────────
-// CATÁLOGO KIA 2026
-// ─────────────────────────────────────────────────────────────────────────────
 export const KIA_VEHICLES = {
   gasolina: [
     {

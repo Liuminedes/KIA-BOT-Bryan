@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: kia-bot-bryan
+    env: node
+    buildCommand: npm ci
+    startCommand: node src/index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: REDIS_URL
+        sync: false
+      - key: ADVISOR_PHONE
+        sync: false
+      - key: ADMIN_TOKEN
+        sync: false
+    disk:
+      name: wwebjs-auth
+      mountPath: /data/wwebjs_auth
+      sizeGB: 1

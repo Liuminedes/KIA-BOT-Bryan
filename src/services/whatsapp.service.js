@@ -1,329 +1,165 @@
-import baileys from '@whiskeysockets/baileys';
-const {
-  default: makeWASocket,
-  useMultiFileAuthState,
-  fetchLatestBaileysVersion,
-  DisconnectReason,
-  makeCacheableSignalKeyStore,
-} = baileys;
-import { Boom } from '@hapi/boom';
-import pino from 'pino';
-import fs from 'fs';
+import pkg from 'whatsapp-web.js';
+const { Client, LocalAuth } = pkg;
 import { logger } from '../config/logger.js';
 import { config } from '../config/env.js';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ESTADO MÓDULO
-// ─────────────────────────────────────────────────────────────────────────────
-let sock         = null;
-let qrCode       = null;
-let isReady      = false;
-let reconnecting = false;
+let client = null;
+let qrCode = null;
+let isReady = false;
 
-// Textos enviados por el bot recientemente — para distinguir bot vs asesor.
+// Textos enviados por el bot recientemente — para distinguir bot vs Bryan
 // Clave: "destinatario|texto_recortado", TTL: 10 segundos
 const botSentTexts = new Set();
 const BOT_TEXT_TTL = 10_000;
 
-// Mapa LID → JID real (ej: "186874496860292@lid" → "573001234567@s.whatsapp.net")
-// Se construye dinámicamente cuando llegan mensajes entrantes que incluyen
-// ambos identificadores. WhatsApp Multi-Device usa @lid por privacidad pero
-// los envíos a veces solo funcionan con el JID real (@s.whatsapp.net).
-const lidToJidMap = new Map();
+export function getQR() { return qrCode; }
+export function isClientReady() { return isReady; }
+export function getClient() { return client; }
 
-// Logger silencioso para Baileys (muy verboso por defecto)
-const baileysLogger = pino({ level: 'silent' });
+export async function initWhatsApp(onMessage, onBryanMessage) {
+  const puppeteerConfig = {
+    headless: true,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-accelerated-2d-canvas',
+      '--no-first-run',
+      '--no-zygote',
+      '--single-process',
+      '--disable-gpu',
+    ],
+  };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GETTERS PÚBLICOS
-// ─────────────────────────────────────────────────────────────────────────────
-export function getQR()          { return qrCode; }
-export function isClientReady()  { return isReady; }
-export function getSocket()      { return sock; }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// HELPERS
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Extrae texto plano de un mensaje de Baileys (múltiples formatos posibles).
- */
-function extractText(message) {
-  if (!message) return '';
-  return (
-    message.conversation ||
-    message.extendedTextMessage?.text ||
-    message.imageMessage?.caption ||
-    message.videoMessage?.caption ||
-    message.buttonsResponseMessage?.selectedButtonId ||
-    message.listResponseMessage?.singleSelectReply?.selectedRowId ||
-    message.templateButtonReplyMessage?.selectedId ||
-    ''
-  ).trim();
-}
-
-/**
- * Normaliza un JID (ej: "573001234567@s.whatsapp.net").
- */
-function normalizeJid(jid) {
-  if (!jid) return '';
-  // Remover device suffix (:1, :2) si existe
-  return jid.replace(/:[0-9]+@/, '@');
-}
-
-/**
- * Extrae solo la parte de identidad del JID (sin sufijo @s.whatsapp.net o @lid).
- * Útil para matching consistente porque el mismo contacto puede llegar a veces
- * como "573001234567@s.whatsapp.net" y otras como "186874496860292@lid".
- */
-function extractJidIdentity(jid) {
-  if (!jid) return '';
-  return normalizeJid(jid).replace(/@.*$/, '');
-}
-
-/**
- * Verifica si el JID corresponde al propio asesor (para ignorar sus mensajes).
- */
-function isAdvisorJid(jid) {
-  if (!config.advisor.phone || !jid) return false;
-  const identity = extractJidIdentity(jid);
-  return identity === config.advisor.phone;
-}
-
-/**
- * Asegura que exista la carpeta de autenticación.
- */
-function ensureAuthDir() {
-  const dir = config.authPath;
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-    logger.info(`[WA] Carpeta auth creada: ${dir}`);
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+    puppeteerConfig.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
   }
-}
 
-// ─────────────────────────────────────────────────────────────────────────────
-// INICIALIZACIÓN
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Inicializa la conexión con WhatsApp vía Baileys.
- *
- * @param {Function} onMessage        - Callback cuando el cliente escribe
- *                                      ({ userId, text, pushName, messageId })
- * @param {Function} onAdvisorMessage - Callback cuando el asesor escribe a un
- *                                      cliente ({ clientUserId, text })
- */
-export async function initWhatsApp(onMessage, onAdvisorMessage) {
-  ensureAuthDir();
-
-  const { state, saveCreds } = await useMultiFileAuthState(config.authPath);
-  const { version, isLatest } = await fetchLatestBaileysVersion();
-  logger.info(`[WA] Baileys WA Web version: ${version.join('.')} (latest: ${isLatest})`);
-
-  sock = makeWASocket({
-    version,
-    logger: baileysLogger,
-    printQRInTerminal: false,
-    auth: {
-      creds: state.creds,
-      keys: makeCacheableSignalKeyStore(state.keys, baileysLogger),
-    },
-    browser: ['KIA Bot', 'Chrome', '120.0.0'],
-    syncFullHistory: false,
-    markOnlineOnConnect: false,
-    generateHighQualityLinkPreview: false,
+  client = new Client({
+    authStrategy: new LocalAuth({ dataPath: config.authPath }),
+    puppeteer: puppeteerConfig,
   });
 
-  // ── Persistencia de credenciales ───────────────────────────────────────────
-  sock.ev.on('creds.update', saveCreds);
+  client.on('qr', (qr) => {
+    qrCode = qr;
+    isReady = false;
+    logger.info('[WA] QR generado — escanea en /admin');
+  });
 
-  // ── Estado de conexión + QR ────────────────────────────────────────────────
-  sock.ev.on('connection.update', (update) => {
-    const { connection, lastDisconnect, qr } = update;
+  client.on('ready', () => {
+    isReady = true;
+    qrCode = null;
+    logger.info('[WA] ✅ WhatsApp conectado y listo');
+  });
 
-    if (qr) {
-      qrCode = qr;
-      isReady = false;
-      logger.info('[WA] QR generado — escanea en /admin');
-    }
+  client.on('authenticated', () => logger.info('[WA] Autenticado'));
 
-    if (connection === 'open') {
-      isReady = true;
-      qrCode = null;
-      reconnecting = false;
-      logger.info('[WA] ✅ WhatsApp conectado y listo');
-    }
+  client.on('auth_failure', (msg) => logger.error(`[WA] Auth failure: ${msg}`));
 
-    if (connection === 'close') {
-      isReady = false;
-      const statusCode = new Boom(lastDisconnect?.error)?.output?.statusCode;
-      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+  client.on('disconnected', (reason) => {
+    isReady = false;
+    logger.warn(`[WA] Desconectado: ${reason}`);
+    setTimeout(() => {
+      client.initialize().catch(err => logger.error(`[WA] Reconexión fallida: ${err.message}`));
+    }, 5000);
+  });
 
-      logger.warn(`[WA] Desconectado (code=${statusCode}) — reconectar=${shouldReconnect}`);
+  // ── Mensajes ENTRANTES (del cliente) ────────────────────────────────────────
+  client.on('message', async (msg) => {
+    try {
+      if (msg.fromMe) return;
 
-      if (statusCode === DisconnectReason.loggedOut) {
-        // Sesión cerrada desde el teléfono — hay que limpiar el auth
-        logger.error('[WA] Sesión cerrada manualmente. Limpiando credenciales...');
-        try {
-          fs.rmSync(config.authPath, { recursive: true, force: true });
-          fs.mkdirSync(config.authPath, { recursive: true });
-        } catch (err) {
-          logger.error(`[WA] Error limpiando auth: ${err.message}`);
-        }
-      }
+      // Filtros: ignorar grupos, canales/newsletters, broadcasts y estados.
+      // Esto evita que el bot procese mensajes de Noticentro 1, Liga BetPlay,
+      // listas de difusión, estados de WhatsApp, etc.
+      const from = msg.from || '';
+      if (
+        from.endsWith('@g.us') ||             // grupos
+        from.endsWith('@newsletter') ||       // canales/newsletters
+        from.endsWith('@broadcast') ||        // listas de difusión
+        from === 'status@broadcast'           // estados de WhatsApp
+      ) return;
 
-      if (shouldReconnect && !reconnecting) {
-        reconnecting = true;
-        setTimeout(() => {
-          logger.info('[WA] Reintentando conexión...');
-          initWhatsApp(onMessage, onAdvisorMessage).catch(err =>
-            logger.error(`[WA] Reconexión fallida: ${err.message}`)
-          );
-        }, 5000);
-      }
+      // Ignorar tipos de mensaje no conversacionales (estados, reacciones, etc.)
+      const tipo = msg.type;
+      if (
+        tipo === 'e2e_notification' ||
+        tipo === 'notification_template' ||
+        tipo === 'gp2' ||
+        tipo === 'broadcast_notification'
+      ) return;
+
+      const text     = msg.body?.trim();
+      if (!text) return;
+
+      const userId   = msg.from;
+      const pushName = msg._data?.notifyName || '';
+
+      logger.info(`[WA] ← ${userId} (${pushName}): ${text.substring(0, 60)}`);
+      await onMessage({ userId, text, pushName });
+    } catch (err) {
+      logger.error(`[WA] Error en mensaje: ${err.message}`);
     }
   });
 
-  // ── Mensajes (entrantes Y salientes) ───────────────────────────────────────
-  sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    if (type !== 'notify' && type !== 'append') return;
+  // ── Mensajes SALIENTES — distinguir bot vs Bryan por contenido ─────────────
+  client.on('message_create', async (msg) => {
+    try {
+      if (!msg.fromMe) return;
 
-    for (const msg of messages) {
-      try {
-        await handleIncomingMessage(msg, onMessage, onAdvisorMessage);
-      } catch (err) {
-        logger.error(`[WA] Error procesando mensaje: ${err.message}`);
+      // Mismos filtros que en entrantes — Bryan también puede mandar mensajes
+      // a grupos/canales/etc, pero no nos interesan.
+      const to = msg.to || '';
+      if (
+        to.endsWith('@g.us') ||
+        to.endsWith('@newsletter') ||
+        to.endsWith('@broadcast') ||
+        to === 'status@broadcast'
+      ) return;
+
+      const clientUserId = msg.to;
+      const text = msg.body?.trim();
+      if (!text) return;
+
+      // Generar clave: destinatario + primeros 80 chars del texto
+      const key = `${clientUserId}|${text.substring(0, 80)}`;
+
+      // Si el bot envió este texto recientemente → ignorar
+      if (botSentTexts.has(key)) {
+        botSentTexts.delete(key);
+        return;
       }
+
+      // No es un texto del bot → Bryan escribió manualmente
+      logger.info(`[WA] → Bryan escribió a ${clientUserId}: ${text.substring(0, 60)}`);
+      await onBryanMessage({ clientUserId });
+    } catch (err) {
+      logger.error(`[WA] Error en message_create: ${err.message}`);
     }
   });
+
+  await client.initialize();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// HANDLER DE MENSAJES
-// ─────────────────────────────────────────────────────────────────────────────
-async function handleIncomingMessage(msg, onMessage, onAdvisorMessage) {
-  // Ignorar mensajes sin contenido
-  if (!msg.message) return;
-
-  // Ignorar mensajes de grupos, newsletters, canales y status broadcast
-  const jid = msg.key.remoteJid || '';
-  if (
-    jid.endsWith('@g.us') ||
-    jid.endsWith('@newsletter') ||
-    jid.endsWith('@broadcast') ||
-    jid === 'status@broadcast'
-  ) return;
-
-  // Ignorar protocol messages (eliminaciones, ediciones, etc.)
-  if (msg.message.protocolMessage) return;
-
-  const text = extractText(msg.message);
-  if (!text) return;
-
-  const messageId = msg.key.id;
-  const pushName  = msg.pushName || '';
-
-  // ── Construir mapa LID → JID real ─────────────────────────────────────────
-  // Cuando llega un mensaje con @lid en remoteJid, Baileys puede incluir el
-  // número real en otros campos del key. Lo guardamos para usarlo al enviar.
-  if (jid.endsWith('@lid')) {
-    // msg.key.senderPn contiene el JID real "@s.whatsapp.net" (Phone Number)
-    const realJid = msg.key.senderPn || msg.key.participantPn;
-    if (realJid && realJid.endsWith('@s.whatsapp.net')) {
-      const previousMapping = lidToJidMap.get(jid);
-      if (previousMapping !== realJid) {
-        lidToJidMap.set(jid, realJid);
-        logger.info(`[WA] 🔗 Mapeado ${jid} → ${realJid}`);
-      }
-    }
-  }
-
-  if (msg.key.fromMe) {
-    // ── MENSAJE SALIENTE: el bot o el asesor escribió ───────────────────────
-    const clientUserId = normalizeJid(jid);
-    const clientIdentity = extractJidIdentity(clientUserId);
-
-    // Si el destino es el propio asesor (ej: notificación de lead), ignorar
-    if (isAdvisorJid(clientUserId)) {
-      logger.debug(`[WA] Saliente al propio asesor, ignorando`);
-      return;
-    }
-
-    // Clave: solo identidad numérica + primeros 80 chars del texto.
-    const key = `${clientIdentity}|${text.substring(0, 80)}`;
-
-    if (botSentTexts.has(key)) {
-      // Fue el bot — ignorar
-      botSentTexts.delete(key);
-      logger.debug(`[WA] ✓ Saliente reconocido como del bot (${clientIdentity})`);
-      return;
-    }
-
-    // No es del bot → el asesor escribió manualmente
-    logger.info(`[WA] → Asesor escribió a ${clientUserId}: "${text.substring(0, 60)}"`);
-    await onAdvisorMessage({ clientUserId, text });
-
-  } else {
-    // ── MENSAJE ENTRANTE: el cliente escribió ───────────────────────────────
-    const userId = normalizeJid(jid);
-
-    // Ignorar mensajes del propio asesor (si el asesor se escribe a sí mismo)
-    if (isAdvisorJid(userId)) {
-      logger.debug(`[WA] Entrante del propio asesor, ignorando`);
-      return;
-    }
-
-    logger.info(`[WA] ← ${userId} (${pushName}): "${text.substring(0, 60)}"`);
-    await onMessage({ userId, text, pushName, messageId });
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// API DE ENVÍO (compatible con la versión anterior)
-// ─────────────────────────────────────────────────────────────────────────────
 export const WhatsAppService = {
-
-  /**
-   * Envía un mensaje de texto. Registra el texto en botSentTexts para que el
-   * handler de message_create no lo confunda con un mensaje manual del asesor.
-   */
   async sendText(to, text) {
-    if (!isReady || !sock) {
-      logger.warn(`[WA] ⚠ No listo — no se envió a ${to}: "${text.substring(0, 50)}"`);
+    if (!isReady) {
+      logger.warn(`[WA] No listo — no se envió a ${to}`);
       return;
     }
     try {
-      let jid = to.includes('@') ? to : `${to}@s.whatsapp.net`;
-
-      // Si el destino es un @lid, intentar resolverlo al JID real antes de enviar.
-      // WhatsApp Multi-Device a veces no entrega mensajes a @lid directamente.
-      if (jid.endsWith('@lid') && lidToJidMap.has(jid)) {
-        const resolvedJid = lidToJidMap.get(jid);
-        logger.info(`[WA] 🔗 Resolviendo ${jid} → ${resolvedJid} para envío`);
-        jid = resolvedJid;
-      } else if (jid.endsWith('@lid')) {
-        logger.warn(`[WA] ⚠ Enviando a ${jid} sin mapping LID→PN. El mensaje puede no llegar.`);
-      }
-
-      const identity = extractJidIdentity(jid);
-
-      // Registrar ANTES de enviar para que el echo saliente no dispare
-      // onAdvisorMessage por error.
-      const key = `${identity}|${text.substring(0, 80)}`;
+      // Registrar el texto ANTES de enviar para que message_create lo reconozca
+      const key = `${to}|${text.substring(0, 80)}`;
       botSentTexts.add(key);
       setTimeout(() => botSentTexts.delete(key), BOT_TEXT_TTL);
 
-      const result = await sock.sendMessage(jid, { text });
-      logger.info(`[WA] ✓ Bot envió a ${jid}: "${text.substring(0, 60)}" (msgId: ${result?.key?.id || '?'})`);
+      await client.sendMessage(to, text);
+      logger.debug(`[WA] Enviado a ${to}`);
     } catch (err) {
-      logger.error(`[WA] ✗ Error enviando a ${to}: ${err.message}`);
+      logger.error(`[WA] Error enviando a ${to}: ${err.message}`);
     }
   },
 
-  /**
-   * Envía lista de botones como texto numerado (Baileys no soporta botones
-   * interactivos de manera estable en cuentas personales).
-   */
   sendButtons(to, body, buttons) {
     const opts = buttons.map((b, i) => `${i + 1}️⃣ ${b.title}`).join('\n');
     return this.sendText(to, `${body}\n\n${opts}`);
@@ -334,21 +170,5 @@ export const WhatsAppService = {
     return this.sendText(to, `${body}\n\n${opts}`);
   },
 
-  /**
-   * No-op compatible con la API anterior (Baileys maneja recibos internamente).
-   */
   markAsRead(_id) { return Promise.resolve(); },
-
-  /**
-   * Cierra la conexión (útil para shutdown limpio).
-   */
-  async logout() {
-    if (sock) {
-      try {
-        await sock.logout();
-      } catch (err) {
-        logger.error(`[WA] Error en logout: ${err.message}`);
-      }
-    }
-  },
 };

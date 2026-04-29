@@ -1,16 +1,16 @@
 import express from 'express';
 import multer from 'multer';
 import path from 'path';
-import fs from 'fs';
 import { fileURLToPath } from 'url';
+import XLSX from 'xlsx';
 import { config } from '../config/env.js';
 import { logger } from '../config/logger.js';
 import { SessionService } from '../services/session.service.js';
-import { getQR, isClientReady, WhatsAppService } from '../services/whatsapp.service.js';
-import { ACTIVATION_MODE } from '../flows/steps.js';
+import { savePrices, parseExcelPrices } from '../services/prices.service.js';
+import { getQR, isClientReady } from '../services/whatsapp.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
-const __dirname  = path.dirname(__filename);
+const __dirname = path.dirname(__filename);
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -21,7 +21,6 @@ function auth(req, res, next) {
   next();
 }
 
-// ── Panel HTML (login simple) ─────────────────────────────────────────────────
 router.get('/', (req, res) => {
   const token = req.query.token || '';
   if (token !== config.admin.token) {
@@ -38,8 +37,7 @@ router.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, '../admin/panel.html'));
 });
 
-// ── Status del bot ────────────────────────────────────────────────────────────
-router.get('/api/status', auth, async (_req, res) => {
+router.get('/api/status', auth, async (req, res) => {
   const qr = getQR();
   const connected = isClientReady();
   const globallyPaused = await SessionService.isGloballyPaused();
@@ -48,18 +46,9 @@ router.get('/api/status', auth, async (_req, res) => {
     const QRCode = (await import('qrcode')).default;
     qrDataUrl = await QRCode.toDataURL(qr);
   }
-  res.json({
-    connected,
-    qr: qrDataUrl,
-    globallyPaused,
-    advisor: {
-      name: config.advisor.name,
-      firstName: config.advisor.firstName,
-    },
-  });
+  res.json({ connected, qr: qrDataUrl, globallyPaused });
 });
 
-// ── Pausa global ──────────────────────────────────────────────────────────────
 router.post('/api/pause-global', auth, async (req, res) => {
   const { paused } = req.body;
   await SessionService.setPausedGlobal(paused);
@@ -67,30 +56,32 @@ router.post('/api/pause-global', auth, async (req, res) => {
   res.json({ success: true, paused });
 });
 
-// ── Listado de sesiones ──────────────────────────────────────────────────────
-router.get('/api/sessions', auth, async (_req, res) => {
+router.post('/api/upload-prices', auth, upload.single('excel'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No se recibió archivo' });
+    const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const vehicles = parseExcelPrices(workbook);
+    if (!vehicles || vehicles.length === 0) {
+      return res.status(400).json({ error: 'El archivo no tiene datos válidos.' });
+    }
+    await savePrices(vehicles);
+    logger.info(`[Admin] Precios actualizados: ${vehicles.length} versiones`);
+    res.json({ success: true, count: vehicles.length });
+  } catch (err) {
+    logger.error(`[Admin] Error subiendo precios: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/api/sessions', auth, async (req, res) => {
   const sessions = await SessionService.listActive();
-  // Ordenar: primero armadas, luego activas, luego pausadas, por updatedAt desc
-  const order = {
-    [ACTIVATION_MODE.ARMED_BY_ADVISOR]:  0,
-    [ACTIVATION_MODE.ACTIVE]:            1,
-    [ACTIVATION_MODE.PAUSED_BY_ADVISOR]: 2,
-    [ACTIVATION_MODE.PAUSED_ADMIN]:      3,
-    [ACTIVATION_MODE.PAUSED_HANDOFF]:    4,
-  };
-  sessions.sort((a, b) => {
-    const oa = order[a.activationMode] ?? 99;
-    const ob = order[b.activationMode] ?? 99;
-    if (oa !== ob) return oa - ob;
-    return (b.updatedAt || 0) - (a.updatedAt || 0);
-  });
   res.json({ sessions });
 });
 
 router.post('/api/session/pause', auth, async (req, res) => {
   const { userId } = req.body;
   const session = await SessionService.get(userId);
-  SessionService.markPausedByAdmin(session);
+  session.bryantook = true;
   await SessionService.save(session);
   logger.info(`[Admin] Sesión pausada: ${userId}`);
   res.json({ success: true });
@@ -99,7 +90,10 @@ router.post('/api/session/pause', auth, async (req, res) => {
 router.post('/api/session/reactivate', auth, async (req, res) => {
   const { userId } = req.body;
   const session = await SessionService.get(userId);
-  SessionService.markActive(session, true);
+  session.bryantook = false;
+  session.handoffMode = false;
+  session.step = 'WELCOME';
+  session.lead = { name: null, phone: null, interest: null, budget: null, employment: null, income: null, creditStatus: null };
   await SessionService.save(session);
   logger.info(`[Admin] Bot reactivado para: ${userId}`);
   res.json({ success: true });
@@ -111,8 +105,8 @@ router.post('/api/session/reset', auth, async (req, res) => {
   res.json({ success: true });
 });
 
-// ── Números excluidos ─────────────────────────────────────────────────────────
-router.get('/api/excluded', auth, async (_req, res) => {
+// ── Números excluidos ─────────────────────────────────────────────────────
+router.get('/api/excluded', auth, async (req, res) => {
   const numbers = await SessionService.getExcludedNumbers();
   res.json({ numbers });
 });
@@ -128,25 +122,6 @@ router.post('/api/excluded/remove', auth, async (req, res) => {
   const { number } = req.body;
   const numbers = await SessionService.removeExcludedNumber(number);
   res.json({ success: true, numbers });
-});
-
-// ── Forzar relogin (limpia auth y reinicia) ──────────────────────────────────
-router.post('/api/relogin', auth, async (_req, res) => {
-  try {
-    await WhatsAppService.logout();
-    if (fs.existsSync(config.authPath)) {
-      fs.rmSync(config.authPath, { recursive: true, force: true });
-      fs.mkdirSync(config.authPath, { recursive: true });
-    }
-    logger.warn('[Admin] Relogin forzado — reiniciando proceso en 2s');
-    res.json({ success: true, message: 'Reiniciando, escanea el nuevo QR en breve.' });
-    // exit(1) para que Railway interprete como fallo y reinicie automáticamente
-    // según la política restartPolicyType: "ON_FAILURE" de railway.json
-    setTimeout(() => process.exit(1), 2000);
-  } catch (err) {
-    logger.error(`[Admin] Error en relogin: ${err.message}`);
-    res.status(500).json({ error: err.message });
-  }
 });
 
 export default router;

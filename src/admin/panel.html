@@ -10,7 +10,7 @@
     .header { background: #BB162B; padding: 16px 24px; display: flex; align-items: center; gap: 12px; }
     .header h1 { font-size: 18px; font-weight: 700; color: white; }
     .header span { font-size: 12px; color: rgba(255,255,255,0.7); }
-    .container { max-width: 980px; margin: 0 auto; padding: 24px 16px; display: grid; gap: 20px; }
+    .container { max-width: 900px; margin: 0 auto; padding: 24px 16px; display: grid; gap: 20px; }
     .card { background: #1a1d27; border: 1px solid #2d3148; border-radius: 12px; padding: 20px; }
     .card h2 { font-size: 14px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
     .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
@@ -18,7 +18,7 @@
     .dot-red   { background: #ef4444; box-shadow: 0 0 6px #ef4444; }
     .dot-yellow{ background: #f59e0b; box-shadow: 0 0 6px #f59e0b; }
     .qr-container { display: flex; flex-direction: column; align-items: center; gap: 12px; }
-    .qr-container img { width: 220px; height: 220px; border-radius: 8px; border: 2px solid #2d3148; background: white; padding: 8px; }
+    .qr-container img { width: 220px; height: 220px; border-radius: 8px; border: 2px solid #2d3148; }
     .status-badge { padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 600; }
     .badge-green  { background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.3); }
     .badge-yellow { background: rgba(245,158,11,0.15); color: #f59e0b; border: 1px solid rgba(245,158,11,0.3); }
@@ -32,18 +32,19 @@
     .btn-danger:hover { background: rgba(239,68,68,0.25); }
     .btn-success { background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.3); }
     .btn-success:hover { background: rgba(34,197,94,0.25); }
-    .btn-warn { background: rgba(245,158,11,0.12); color: #f59e0b; border: 1px solid rgba(245,158,11,0.3); }
-    .btn-warn:hover { background: rgba(245,158,11,0.2); }
+    .upload-zone { border: 2px dashed #2d3148; border-radius: 8px; padding: 32px; text-align: center; cursor: pointer; transition: all 0.2s; }
+    .upload-zone:hover { border-color: #BB162B; background: rgba(187,22,43,0.05); }
+    .upload-zone p { color: #64748b; font-size: 14px; margin-top: 8px; }
+    .upload-zone .icon { font-size: 32px; }
+    input[type="file"] { display: none; }
     .sessions-table { width: 100%; border-collapse: collapse; font-size: 13px; }
     .sessions-table th { text-align: left; padding: 8px 12px; color: #64748b; border-bottom: 1px solid #2d3148; font-weight: 500; }
     .sessions-table td { padding: 10px 12px; border-bottom: 1px solid #1e2235; }
     .sessions-table tr:last-child td { border-bottom: none; }
     .tag { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
-    .tag-active   { background: rgba(34,197,94,0.15); color: #22c55e; }
-    .tag-paused   { background: rgba(245,158,11,0.15); color: #f59e0b; }
-    .tag-handoff  { background: rgba(139,92,246,0.15); color: #a78bfa; }
-    .tag-admin    { background: rgba(100,116,139,0.2); color: #94a3b8; }
-    .tag-armed    { background: rgba(59,130,246,0.15); color: #60a5fa; border: 1px solid rgba(59,130,246,0.3); }
+    .tag-active  { background: rgba(34,197,94,0.15); color: #22c55e; }
+    .tag-paused  { background: rgba(245,158,11,0.15); color: #f59e0b; }
+    .tag-handoff { background: rgba(139,92,246,0.15); color: #a78bfa; }
     .toast { position: fixed; bottom: 24px; right: 24px; background: #1e2235; border: 1px solid #2d3148; border-radius: 8px; padding: 12px 20px; font-size: 14px; display: none; z-index: 100; }
     .toast.show { display: block; animation: fadeIn 0.3s; }
     .global-toggle { display: flex; align-items: center; justify-content: space-between; }
@@ -53,6 +54,8 @@
     .slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: 0.3s; }
     input:checked + .slider { background: #BB162B; }
     input:checked + .slider:before { transform: translateX(22px); }
+    .excel-info { background: #0f1117; border-radius: 6px; padding: 12px; font-size: 12px; color: #64748b; margin-top: 12px; }
+    .excel-info code { color: #94a3b8; }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
   </style>
 </head>
@@ -61,7 +64,7 @@
 <div class="header">
   <div>
     <h1>🚗 KIA Bot — Panel Admin</h1>
-    <span id="advisorLabel">Vyntra Orbit</span>
+    <span>Vyntra Orbit · Bryan Losada</span>
   </div>
 </div>
 
@@ -81,10 +84,7 @@
         <p style="margin-top:8px; font-weight:600;">WhatsApp conectado</p>
         <p style="font-size:12px; color:#64748b; margin-top:4px;">El bot está activo y respondiendo</p>
       </div>
-      <div style="display:flex; gap:8px; margin-top:8px">
-        <button class="btn btn-secondary" onclick="refreshStatus()">🔄 Actualizar estado</button>
-        <button class="btn btn-warn" onclick="forceRelogin()" title="Cierra sesión y genera nuevo QR">🔓 Forzar relogin</button>
-      </div>
+      <button class="btn btn-secondary" onclick="refreshStatus()" style="margin-top:8px">🔄 Actualizar estado</button>
     </div>
   </div>
 
@@ -103,18 +103,29 @@
     </div>
   </div>
 
+  <!-- Subir Excel precios -->
+  <div class="card">
+    <h2>📊 Actualizar Precios</h2>
+    <label class="upload-zone" for="excelFile" id="uploadZone">
+      <div class="icon">📁</div>
+      <p><strong>Haz clic o arrastra tu archivo Excel</strong></p>
+      <p>Formatos: .xlsx · .xls</p>
+      <input type="file" id="excelFile" accept=".xlsx,.xls" onchange="uploadExcel(this)">
+    </label>
+    <div class="excel-info">
+      📋 <strong>Estructura esperada del Excel:</strong><br><br>
+      <code>Columna A:</code> Nombre del modelo (ej: KIA Picanto)<br>
+      <code>Columna B:</code> Versión (ej: Vibrant MT)<br>
+      <code>Columna C:</code> Precio (ej: 59990000)<br>
+      <code>Columna D:</code> Tipo (gasolina / hibrido / electrico)
+    </div>
+    <div id="uploadStatus" style="margin-top:12px; font-size:13px; display:none"></div>
+  </div>
+
   <!-- Sesiones activas -->
   <div class="card">
-    <h2>👥 Sesiones de Clientes</h2>
-    <div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap">
-      <button class="btn btn-secondary" onclick="loadSessions()">🔄 Actualizar lista</button>
-      <div style="display:flex; gap:12px; align-items:center; font-size:12px; color:#64748b; flex-wrap:wrap">
-        <span><span class="tag tag-armed">🎯 Armado</span> asesor escribió primero</span>
-        <span><span class="tag tag-active">▶ Bot activo</span></span>
-        <span><span class="tag tag-paused">⏸ Asesor atiende</span></span>
-        <span><span class="tag tag-handoff">🏁 Lead entregado</span></span>
-      </div>
-    </div>
+    <h2>👥 Sesiones Activas</h2>
+    <button class="btn btn-secondary" onclick="loadSessions()" style="margin-bottom:16px">🔄 Actualizar lista</button>
     <div id="sessionsContainer">
       <p style="color:#64748b; font-size:13px">Haz clic en "Actualizar lista" para ver las sesiones</p>
     </div>
@@ -161,11 +172,6 @@
     const badge = document.getElementById('statusBadge');
     const qrImg = document.getElementById('qrImage');
     const connectedMsg = document.getElementById('connectedMsg');
-    const advisorLabel = document.getElementById('advisorLabel');
-
-    if (data.advisor?.name) {
-      advisorLabel.textContent = `Vyntra Orbit · ${data.advisor.name}`;
-    }
 
     if (data.connected) {
       badge.className = 'status-badge badge-green';
@@ -192,31 +198,34 @@
     showToast(paused ? '⏸️ Bot pausado globalmente' : '▶️ Bot activo', 'success');
   }
 
-  async function forceRelogin() {
-    if (!confirm('¿Seguro que quieres cerrar la sesión de WhatsApp y generar un nuevo QR? El bot se reiniciará.')) return;
-    const data = await api('/admin/api/relogin', { method: 'POST' });
-    showToast(data.message || 'Reiniciando...', 'info');
-  }
+  async function uploadExcel(input) {
+    const file = input.files[0];
+    if (!file) return;
+    const status = document.getElementById('uploadStatus');
+    status.style.display = 'block';
+    status.innerHTML = '⏳ Subiendo archivo...';
+    status.style.color = '#f59e0b';
 
-  function modeToTag(mode) {
-    switch (mode) {
-      case 'ARMED_BY_ADVISOR':  return { cls: 'tag-armed',   txt: '🎯 Armado por asesor' };
-      case 'ACTIVE':            return { cls: 'tag-active',  txt: '▶ Bot activo' };
-      case 'PAUSED_BY_ADVISOR': return { cls: 'tag-paused',  txt: '⏸ Asesor atiende' };
-      case 'PAUSED_HANDOFF':    return { cls: 'tag-handoff', txt: '🏁 Lead entregado' };
-      case 'PAUSED_ADMIN':      return { cls: 'tag-admin',   txt: '🛑 Pausado por admin' };
-      default:                  return { cls: 'tag-active',  txt: mode || '—' };
+    const formData = new FormData();
+    formData.append('excel', file);
+
+    const res = await fetch('/admin/api/upload-prices', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${TOKEN}` },
+      body: formData,
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      status.innerHTML = `✅ Precios actualizados — ${data.count} versiones cargadas`;
+      status.style.color = '#22c55e';
+      showToast('✅ Precios actualizados correctamente', 'success');
+    } else {
+      status.innerHTML = `❌ Error: ${data.error}`;
+      status.style.color = '#ef4444';
+      showToast('❌ Error al subir el archivo', 'error');
     }
-  }
-
-  function formatAge(ts) {
-    if (!ts) return '—';
-    const diff = Date.now() - ts;
-    const mins = Math.floor(diff / 60000);
-    if (mins < 60) return `${mins}m`;
-    const hrs = Math.floor(mins / 60);
-    if (hrs < 48) return `${hrs}h`;
-    return `${Math.floor(hrs / 24)}d`;
+    input.value = '';
   }
 
   async function loadSessions() {
@@ -229,25 +238,22 @@
     }
 
     const rows = data.sessions.map(s => {
-      const tag = modeToTag(s.activationMode);
+      const status = s.bryantook ? 'bryan' : s.handoffMode ? 'handoff' : 'active';
+      const tagClass = status === 'active' ? 'tag-active' : status === 'handoff' ? 'tag-handoff' : 'tag-paused';
+      const tagText = status === 'active' ? 'Bot activo' : status === 'handoff' ? 'Lead completo' : 'Bryan atiende';
       const phone = s.lead?.phone ? `+${s.lead.phone}` : '—';
       const name = s.lead?.name || s.pushName || '—';
       const interest = s.lead?.interest || '—';
-      const lastActivity = formatAge(s.updatedAt);
-      const isPaused = s.activationMode && s.activationMode !== 'ACTIVE' && s.activationMode !== 'ARMED_BY_ADVISOR';
-      const firstBy = s.firstContactBy === 'ADVISOR' ? '👤 Asesor' : '💬 Cliente';
-
+      const isBotOff = s.bryantook || s.handoffMode;
       return `
         <tr>
           <td>${name}</td>
           <td>${phone}</td>
           <td style="font-size:12px">${interest}</td>
-          <td style="font-size:11px; color:#64748b">${firstBy}</td>
-          <td style="font-size:12px">${s.step || '—'}</td>
-          <td><span class="tag ${tag.cls}">${tag.txt}</span></td>
-          <td style="font-size:11px; color:#64748b">${lastActivity}</td>
+          <td>${s.step || '—'}</td>
+          <td><span class="tag ${tagClass}">${tagText}</span></td>
           <td style="white-space:nowrap">
-            ${isPaused
+            ${isBotOff
               ? `<button class="btn btn-success" style="padding:4px 10px; font-size:12px" onclick="reactivateSession('${s.userId}')">▶ Reactivar</button>`
               : `<button class="btn btn-danger" style="padding:4px 10px; font-size:12px" onclick="pauseSession('${s.userId}')">⏸ Pausar</button>`
             }
@@ -258,12 +264,10 @@
     }).join('');
 
     container.innerHTML = `
-      <div style="overflow-x:auto">
       <table class="sessions-table">
-        <thead><tr><th>Nombre</th><th>Teléfono</th><th>Interés</th><th>Inició</th><th>Step</th><th>Estado</th><th>Últ.</th><th>Acciones</th></tr></thead>
+        <thead><tr><th>Nombre</th><th>Teléfono</th><th>Interés</th><th>Step</th><th>Estado</th><th>Acciones</th></tr></thead>
         <tbody>${rows}</tbody>
-      </table>
-      </div>`;
+      </table>`;
   }
 
   async function reactivateSession(userId) {
@@ -279,7 +283,6 @@
   }
 
   async function resetSession(userId) {
-    if (!confirm('¿Borrar por completo la sesión de este cliente?')) return;
     await api('/admin/api/session/reset', { method: 'POST', body: JSON.stringify({ userId }) });
     showToast('🔄 Sesión reseteada', 'success');
     loadSessions();
@@ -292,6 +295,7 @@
     loadSessions();
   }
 
+  // ── Números excluidos ───────────────────────────────────────────────────
   async function loadExcluded() {
     const data = await api('/admin/api/excluded');
     const container = document.getElementById('excludedList');
@@ -323,13 +327,12 @@
     loadExcluded();
   }
 
-  // Inicialización
+  // Verificar estado al cargar
   refreshStatus();
   setInterval(refreshStatus, 15000);
   loadExcluded();
-  loadSessions();
-  setInterval(loadSessions, 30000);
 
+  // Estado de pausa global
   api('/admin/api/status').then(data => {
     document.getElementById('globalToggle').checked = !data.globallyPaused;
   });
